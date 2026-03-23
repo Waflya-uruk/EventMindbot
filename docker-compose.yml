@@ -1,0 +1,73 @@
+services:
+  # 1. База данных PostgreSQL
+  db:
+    image: postgres:16
+    container_name: team3-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-odoo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-odoo}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - team3_db_data:/var/lib/postgresql/data
+    networks:
+      - eventmind-network
+
+  # 2. ERP система Odoo
+  odoo:
+    image: odoo:18
+    container_name: team3-odoo
+    depends_on:
+      - db
+    ports:
+      - "8072:8072"
+    environment:
+      HOST: db
+      USER: ${POSTGRES_USER:-odoo}
+      PASSWORD: ${POSTGRES_PASSWORD:-odoo}
+    volumes:
+      - team3_odoo_data:/var/lib/odoo
+    networks:
+      - eventmind-network
+
+  # 3. (FastAPI)
+  api:
+    build: .
+    container_name: eventmind-api
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-odoo}:${POSTGRES_PASSWORD:-odoo}@db:5432/${POSTGRES_DB:-postgres}
+    networks:
+      - eventmind-network
+
+  # 4. AI-Агент
+  ai_agent:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: eventmind-ai
+    depends_on:
+      - api
+      - db
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-odoo}:${POSTGRES_PASSWORD:-odoo}@db:5432/${POSTGRES_DB:-postgres}
+      - GIGACHAT_CREDENTIALS=${GIGACHAT_CREDENTIALS}
+    networks:
+      - eventmind-network
+
+networks:
+  eventmind-network:
+    driver: bridge
+
+volumes:
+  team3_db_data:
+  team3_odoo_data:
