@@ -1,7 +1,7 @@
 import datetime
 from sqlalchemy import and_, desc, select
 
-from database.database import User, UserEvent, CalendarAccount, Author, AuthorEvent, get_db
+from database.database import User, UserEvent, CalendarAccount, Author, AuthorEvent
 from sqlalchemy.orm import Session, joinedload
 
 
@@ -21,33 +21,43 @@ def get_user_by_email(db: Session, email: str):
     return db.execute(query).scalar_one_or_none()
 
 
-def create_yandex_calendar(db: Session, user_id: int, email: str, refresh_token: str):
-    new_calendar = CalendarAccount(user_id=user_id, email=email, provider="yandex", refresh_token=refresh_token)
+def create_yandex_calendar(db: Session, user_id: int, email: str, app_password: str):
+    new_calendar = CalendarAccount(user_id=user_id, email=email, app_password=app_password)
     db.add(new_calendar)
     db.commit()
+    db.refresh(new_calendar)
+    return new_calendar
 
 def get_yandex_account(db: Session, user_id: int):
     query = select(CalendarAccount).where(
-        CalendarAccount.user_id == user_id,
-        CalendarAccount.provider == "yandex"
+        CalendarAccount.user_id == user_id
     )
     return db.execute(query).scalar_one_or_none()
 
-def create_google_calendar(db: Session, user_id: int, email: str, refresh_token: str):
-    new_calendar = CalendarAccount(user_id=user_id, email=email, provider="google", refresh_token=refresh_token)
+def create_google_calendar(db: Session, user_id: int, email: str, app_password: str):
+    new_calendar = CalendarAccount(user_id=user_id, email=email, app_password=app_password)
     db.add(new_calendar)
     db.commit()
+    db.refresh(new_calendar)
+    return new_calendar
 
 def get_google_account(db: Session, user_id: int):
     query = select(CalendarAccount).where(
-        CalendarAccount.user_id == user_id,
-        CalendarAccount.provider == "google"
+        CalendarAccount.user_id == user_id
     )
     return db.execute(query).scalar_one_or_none()
 
 def get_user_calendars(db: Session, user_id: int):
     query = select(CalendarAccount).where(CalendarAccount.user_id == user_id)
     return db.execute(query).scalars().all()
+
+def delete_calendar_account(db: Session, email: str) -> bool:
+    account = db.query(CalendarAccount).filter(CalendarAccount.email == email).first()
+    if account:
+        db.delete(account)
+        db.commit()
+        return True
+    return False
 
 
 def create_event(db: Session, user_id: int, title: str, description: str, start_time: str, end_time:str):

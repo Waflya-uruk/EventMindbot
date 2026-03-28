@@ -1,12 +1,12 @@
 from sqlalchemy.orm import Session
 from core.security import verify_password
 import database.database as database
-from database.service import create_user, get_user_by_email
+from database.service import create_user, create_yandex_calendar, delete_calendar_account, get_user_by_email
 from datetime import datetime
 from services.api import llm_api
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel
-from typing import Optional
+from typing import List, Optional
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from core.ai.agent import agent
@@ -27,7 +27,6 @@ async def lifespan(app: FastAPI):
     # --- КОД ПРИ ВЫКЛЮЧЕНИИ (Shutdown) ---
     print("Приложение завершает работу")
 
-# Привязываем lifespan к приложению
 app = FastAPI(lifespan=lifespan)
 
 
@@ -50,6 +49,22 @@ class RegistrationRequest(BaseModel):
     email: str
     password: str
 
+class CalendarRequest(BaseModel):
+    user_id: int
+    email: str
+    password_token: str
+    save: bool
+
+class CalendarResponse(BaseModel):
+    success: bool
+    message: str
+
+class CalendarAccountResponse(BaseModel):
+    email: str
+    password_token: str
+
+    class Config:
+        from_attributes = True
 
 
 @app.post("/chat")
@@ -60,7 +75,7 @@ async def chat_endpoint(request: ChatRequest):
 
         input = {"messages": [{"role": "user", "content": message}]}
 
-        config = {"configurable": {"user_id": request.user_id}}
+        config = {"configurable": {"user_id": request.user_id}, "recursion_limit": 4}
 
         response = await agent.ainvoke(input=input, config=config)
 
@@ -75,71 +90,80 @@ async def chat_endpoint(request: ChatRequest):
         raise HTTPException(status_code=500, detail="Агент временно недоступен")
 
 @app.post("/login", response_model=LoginResponse)
-async def login(request: LoginRequest, db: Session = Depends(database.get_db)):
-    user = get_user_by_email(db, request.email)
+async def login(request: LoginRequest):
+    try:
+        with database.SessionLocal() as db:
+            user = get_user_by_email(db, request.email)
 
-    if not user or not verify_password(request.password, user.password_hash):
-        raise HTTPException(
-            status_code=401, 
-            detail="Неверный email или пароль"
-        )
+            if not user or not verify_password(request.password, user.password_hash):
+                raise HTTPException(
+                    status_code=401, 
+                    detail="Неверный email или пароль"
+                )
 
-    return {
-        "success": True,
-        "user_id": user.id
-    }
+            return {
+                "success": True,
+                "user_id": user.id
+            }
+    except Exception as e:
+        return f"ОШИБКА: {type(e).__name__} - {str(e)}"
 
 @app.post("/register")
-async def register_user(user_data: RegistrationRequest, db: Session = Depends(database.get_db)):
+async def register_user(request: RegistrationRequest):
+    try:
+        with database.SessionLocal() as db:
+            user=get_user_by_email(db, request.email)
+            
+            if user:
+                return {"status": "exists", "message": "Пользователь уже зарегестрирован"}
+            
+            new_user = create_user(db, request.name, request.email, request.password)
+            
+            db.refresh(new_user)
+            return {"success": True, "user_id": new_user.id}
+    except Exception as e:
+        return f"ОШИБКА: {type(e).__name__} - {str(e)}"
 
-    user=get_user_by_email(db, user_data.email)
-    
-    if user:
-        return {"status": "exists", "message": "Пользователь уже зарегестрирован"}
-    
-    new_user = create_user(db, user_data.name, user_data.email, user_data.password)
-    
-    db.refresh(new_user)
-    return {"status": "success", "user_id": new_user.id}
+@app.post("/calendar", response_model=CalendarResponse)
+async def calendar_service(request: CalendarRequest):
+    success = False
+    result = "Неизвестная ошибка"
 
-# Запуск: uvicorn main:app --host 0.0.0.0 --port 8000
+    try:
+        with database.SessionLocal() as db:
+            if request.save:
+                existing_account = db.query(database.CalendarAccount).filter(
+                    database.CalendarAccount.email == request.email
+                ).first()
 
-#user.create_user('deryagin.dim2015@yandex.ru', '27052005')
-#user.create_yandex_account(1, 'deryagin.dim2015@yandex.ru', 'tfnqwznyujhropmo')
+                if not existing_account:
+                    try:
+                        create_yandex_calendar(db, request.user_id, request.email, request.password_token)
+                        success = True
+                        result = "Календарь успешно создан и привязан"
+                    except Exception as e:
+                        db.rollback()
+                        result = f"Ошибка при создании: {str(e)}"
+                else:
+                    success = False
+                    result = "Ошибка: календарь с таким email уже зарегистрирован"
+            else:
+                success = delete_calendar_account(db, request.email)
+                if success:
+                    result = "Аккаунт успешно удален"
+                else:
+                    result = "Ошибка: аккаунт не найден"
 
-async def process_voice_event(text: str):
-    """
-    Полный цикл: Голос -> Текст -> AI JSON -> База данных
-    """
-    print("🎙 Начинаю обработку аудио...")
-    
-    prompt = llm_api.get_json_promt(text)
-    
-    print("🤖 Нейросеть формирует событие...")
-    json_ai = await llm_api.get_json_from_ai(prompt)
+            return {"success": success, "message": result}
+    except Exception as e:
+        return f"ОШИБКА: {type(e).__name__} - {str(e)}"
 
-    print("🤖 Обработка ответа нейросети")
-    data = llm_api.clean_and_parse_json(json_ai)
-    
-    if data:
-        print(f"✅ Событие распознано: {data['title']}")
-
-        start_dt = datetime.fromisoformat(data['start_time'])
-        end_dt = datetime.fromisoformat(data['end_time'])
-
-        database.create_event(
-            user_id=1, 
-            title=data["title"], 
-            description=data["description"], 
-            start_time=start_dt, 
-            end_time=end_dt
-        )
-        
-        database.sync_events()
-        print("📅 Синхронизация с календарем завершена!")
-        return True
-    else:
-        print("❌ Не удалось распознать данные из JSON")
-        return False
-
-
+@app.get("/calendars", response_model=List[CalendarAccountResponse])
+async def get_calendars(user_id: int = Query()):
+    try:
+        with database.SessionLocal() as db:
+            accounts = db.query(database.CalendarAccount).filter(
+                database.CalendarAccount.user_id == user_id).all()
+            return accounts
+    except Exception as e:
+        return f"ОШИБКА: {type(e).__name__} - {str(e)}"

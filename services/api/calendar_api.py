@@ -2,7 +2,8 @@ import caldav
 import calendar
 import datetime
 
-from database.database import CalendarAccount, UserEvent, get_db
+from database.database import CalendarAccount, UserEvent
+from sqlalchemy.orm import Session
 
 
 CALDAV_URL = "https://caldav.yandex.ru"
@@ -42,8 +43,7 @@ def get_month_events(client, now_date:str):
 
 
 
-def sync_events():
-    db = get_db()
+def sync_events(db: Session):
     pending_events = db.query(UserEvent).filter_by(sync_status="pending").all()
 
     for event in pending_events:
@@ -55,24 +55,20 @@ def sync_events():
                 print(f"У пользователя {event.user_id} не подключен календарь")
                 continue
             
-            if account.provider == 'google':
-                # Вызов функции Google API с использованием account.refresh_token
-                print(f"Отправляем '{event.title}' в Google...")
+            # YANDEX
+            print(f"Отправляем '{event.title}' в Яндекс...")
+            data = {
+                'title': event.title,
+                'description': event.description,
+                'start': event.start_time,
+                'end': event.end_time
+            }
+            client = get_client(account.email, account.app_password)
+            send = send_event(client, event_data=data)
+            if send:
                 event.sync_status = "synced"
-                continue
-            
-            elif account.provider == 'yandex':
-                print(f"Отправляем '{event.title}' в Яндекс...")
-                data = {
-                    'title': event.title,
-                    'description': event.description,
-                    'start': event.start_time,
-                    'end': event.end_time
-                }
-                if send_event(email=account.email, app_password=account.refresh_token, event_data=data):
-                    event.sync_status = "synced"
-
     db.commit()
+    return send
 
 def send_event(client, event_data):
     '''
@@ -104,5 +100,5 @@ def send_event(client, event_data):
     except Exception as e:
         error_str = str(e)
         if "401" in error_str or "Unauthorized" in error_str or "InvalidToken" in error_str:
-             raise PermissionError("Токен Яндекса невалиден") 
+            return "Токен Яндекса невалиден"
         raise e

@@ -105,10 +105,3 @@ def init_db():
     inspector = inspect(engine)
     tables = inspector.get_table_names()
     print(f"Сейчас в базе есть таблицы: {tables}")
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()

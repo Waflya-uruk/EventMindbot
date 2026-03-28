@@ -24,12 +24,14 @@ def create_calendar_event(title: str, description:str, start_time: str, end_time
                 return "Ошибка: У тебя не подключены календари."
             
             create_event(db, user_id, title, description, start_time, end_time)
-            result = sync_events() 
+            result = sync_events(db) 
 
             return result
     except Exception as e:
         print(f"Full error for dev: {traceback.format_exc()}") 
         return f"ОШИБКА: {type(e).__name__} - {str(e)}"
+    
+    
 
 
 
@@ -42,7 +44,6 @@ def check_schedule(date: str, config: RunnableConfig):
     user_id = config.get("configurable", {}).get("user_id")
     if not user_id:
         return "Ошибка: не удалось определить пользователя."
-    
     try:
         accounts = get_user_calendars(user_id)
         if not accounts:
@@ -67,7 +68,6 @@ def check_schedule(date: str, config: RunnableConfig):
 
 def get_user_recommendations(user_id: int, categories: list = None):
     """Используй для поиска интересных событий на основе рейтинга авторов."""
-    # Вызываешь твою функцию get_recommendations(db_session, categories=categories)
     return "Список рекомендованных событий: ..."
 
 @tool
@@ -77,8 +77,11 @@ def check_user_calendars(config: RunnableConfig):
     if not user_id:
         return "Ошибка: не удалось определить пользователя."
     
-    with SessionLocal() as db:
-        accounts = get_user_calendars(db, user_id)
-        if not accounts:
-            return "У пользователя нет подключенных календарей."
-    return [f"{acc.provider}: {acc.email}" for acc in accounts]
+    try:
+        with SessionLocal() as db:
+            accounts = get_user_calendars(db, user_id)
+            if not accounts:
+                return "У пользователя нет подключенных календарей."
+            return [f"{acc.email}" for acc in accounts]
+    except Exception as e:
+        return f"ОШИБКА: {type(e).__name__} - {str(e)}"
