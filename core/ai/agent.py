@@ -9,8 +9,8 @@ model = GigaChat(
     credentials=os.getenv("GIGACHAT_CREDENTIALS"), 
     verify_ssl_certs=False,
     model="GigaChat",
-    scope="GIGACHAT_API_PERS"
-    #temperature=0
+    scope="GIGACHAT_API_PERS",
+    temperature=1
 )
 
 tools = [create_calendar_event]

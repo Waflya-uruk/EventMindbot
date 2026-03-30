@@ -1,16 +1,41 @@
-import os
 import datetime
+import os
+from dataclasses import dataclass
 from typing import List, Optional
-from sqlalchemy import ForeignKey, String, Text, DateTime, Boolean, Float, types, inspect, create_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, sessionmaker, mapped_column, relationship
-from core.security import encrypt_data, decrypt_data, hash_password
+from sqlalchemy import (
+    ForeignKey, String, Text, DateTime, Boolean, Float, types,
+    inspect, create_engine
+)
+from sqlalchemy.orm import (
+    DeclarativeBase, Mapped,
+    mapped_column, relationship
+)
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from core.security import encrypt_data, decrypt_data
+
+@dataclass
+class Settings:
+    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
+    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "")
+    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "postgres")
+    POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "db")
+    POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
+
+    @property
+    def DATABASE_URL(self) -> str:
+        return (
+            f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
+
+settings = Settings()
 
 
 class Base(DeclarativeBase):
     pass
 
 
-# КАСТОМНЫЕ ТИПЫ ДАННЫХ
+# КАСТОМНЫЙ ТИПЫ ДАННЫХ
 class EncryptedString(types.TypeDecorator):
     impl = types.Text
     cache_ok = True
@@ -19,13 +44,6 @@ class EncryptedString(types.TypeDecorator):
     def process_result_value(self, value, dialect):
         return decrypt_data(value) if value else None
 
-class HashedString(types.TypeDecorator):
-    impl = types.String
-    cache_ok = True
-    def process_bind_param(self, value, dialect):
-        return hash_password(value) if value else None
-
-
 # МОДЕЛИ ПОЛЬЗОВАТЕЛЕЙ
 class User(Base):
     __tablename__ = 'users'
@@ -33,7 +51,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    password_hash: Mapped[Optional[str]] = mapped_column(HashedString, nullable=False)
+    password_hash: Mapped[Optional[str]] = mapped_column(String, nullable=False)
     
     calendar_accounts: Mapped[List["CalendarAccount"]] = relationship(back_populates="user")
     events: Mapped[List["UserEvent"]] = relationship(back_populates="user")
@@ -93,15 +111,25 @@ class AuthorEvent(Base):
     
     author: Mapped["Author"] = relationship(back_populates="author_events")
 
+DATABASE_URL = settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
 
-# КОНФИГУРАЦИЯ И СЕССИЯ
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://odoo:odoo@db:5432/postgres")
+engine = create_async_engine(DATABASE_URL, echo=True)
+AsyncSessionLocal = async_sessionmaker(
+    bind=engine, 
+    class_=AsyncSession, 
+    expire_on_commit=False
+)
 
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+async def init_db():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        
+        def get_tables(connection):
+            return inspect(connection).get_table_names()
+        
+        tables = await conn.run_sync(get_tables)
+        print(f"🚀 База готова. Таблицы: {tables}")
 
-def init_db():
-    Base.metadata.create_all(bind=engine)
-    inspector = inspect(engine)
-    tables = inspector.get_table_names()
-    print(f"Сейчас в базе есть таблицы: {tables}")
+async def get_db():
+    async with AsyncSessionLocal() as session:
+        yield session

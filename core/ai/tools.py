@@ -4,7 +4,7 @@ from langchain.tools import tool
 from langchain_core.runnables import RunnableConfig
 
 from database.database import SessionLocal
-from database.service import create_event, get_user_calendars
+from database.service import create_event, get_calendars_by_id
 from services.api.calendar_api import get_client, get_day_events, sync_events
 
 @tool
@@ -19,7 +19,7 @@ def create_calendar_event(title: str, description:str, start_time: str, end_time
     
     try:
         with SessionLocal() as db:
-            accounts = get_user_calendars(db, user_id=user_id)
+            accounts = get_calendars_by_id(db, user_id=user_id)
             if not accounts:
                 return "Ошибка: У тебя не подключены календари."
             
@@ -45,7 +45,7 @@ def check_schedule(date: str, config: RunnableConfig):
     if not user_id:
         return "Ошибка: не удалось определить пользователя."
     try:
-        accounts = get_user_calendars(user_id)
+        accounts = get_calendars_by_id(user_id)
         if not accounts:
             return "Отсутствуют созданные календари"
         
@@ -79,7 +79,7 @@ def check_user_calendars(config: RunnableConfig):
     
     try:
         with SessionLocal() as db:
-            accounts = get_user_calendars(db, user_id)
+            accounts = get_calendars_by_id(db, user_id)
             if not accounts:
                 return "У пользователя нет подключенных календарей."
             return [f"{acc.email}" for acc in accounts]
