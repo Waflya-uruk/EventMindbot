@@ -1,10 +1,13 @@
+import os
+
+
 class Config:
     SECRET_KEY = 'your-secret-key-here-change-in-production'
     
     SMTP_SERVER = 'smtp.yandex.ru'
     SMTP_PORT = 587
-    SMTP_USERNAME = 'deryagin.dim2017@ya.ru'  # Ваш email
-    SMTP_PASSWORD = 'uafdmokxoqxhphgo'     # Пароль приложения
+    SMTP_USERNAME = os.getenv("SMTP_USERNAME")  # Ваш email
+    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")    # Пароль приложения
     EMAIL_FROM = 'Команда EventMind(3)'     # Email отправителя
     
     VERIFICATION_CODE_EXPIRY = 300

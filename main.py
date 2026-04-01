@@ -1,10 +1,23 @@
+import logging
+import sys
+
+from dotenv import load_dotenv
+load_dotenv()
+
 from database import init_db
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from dotenv import load_dotenv
 from services.routers import calendars_router, chat_router, login_router, registration_router
 
-load_dotenv()
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+logger = logging.getLogger("eventmind")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

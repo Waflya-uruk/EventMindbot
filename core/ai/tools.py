@@ -1,87 +1,141 @@
-import traceback
-
 from langchain.tools import tool
 from langchain_core.runnables import RunnableConfig
 
-from database.database import SessionLocal
-from database.service import create_event, get_calendars_by_id
-from services.api.calendar_api import get_client, get_day_events, sync_events
+from database import create_event, get_calendars_by_id, AsyncSessionLocal
+from services.api.calendar_api import YandexCalendarAPI
+from main import logger
 
 @tool
-def create_calendar_event(title: str, description:str, start_time: str, end_time:str, config: RunnableConfig):
+async def create_calendar_event(
+    title: str,
+    description:str, 
+    start_time: str, 
+    end_time:str, 
+    category:str, 
+    config: RunnableConfig
+):
     """
-    Используй эту функцию, когда пользователь просит запланировать что-то.
-    start_time и end_time должен быть в формате ISO (ГГГГ-ММ-ДД ТТ:ММ).
+    Создает новое событие в календаре и фиксирует его в логе активности для будущих рекомендаций.
+    
+    Аргументы:
+    - title: Краткое название события.
+    - description: Детальное описание (что именно нужно сделать).
+    - start_time: Время начала в формате ISO 8601 (ГГГГ-ММ-ДДTHH:MM:SSZ). 
+                 ВАЖНО: Всегда используй UTC время.
+    - end_time: Время окончания в формате ISO 8601 (UTC).
+    - category: Категория дела (например: 'Work', 'Sport', 'Education', 'Rest', 'Hobby').
     """
+
     user_id = config.get("configurable", {}).get("user_id")
     if not user_id:
-        return "Ошибка: не удалось определить пользователя."
+        return "ОШИБКА: Не удалось определить пользователя."
     
-    try:
-        with SessionLocal() as db:
-            accounts = get_calendars_by_id(db, user_id=user_id)
+    async with AsyncSessionLocal() as db:
+        try:
+            accounts = await get_calendars_by_id(db, user_id=user_id)
             if not accounts:
-                return "Ошибка: У тебя не подключены календари."
+                return "ОШИБКА: У пользователя не подключены календари."
             
-            create_event(db, user_id, title, description, start_time, end_time)
-            result = sync_events(db) 
+            new_event = await create_event(db, user_id, title, description, start_time, end_time)
+            
+            results = []
+            bad_emails = []
+            for account in accounts:
+                calendar = YandexCalendarAPI(account.email, account.app_password)
+                synced = await calendar.sync_event(new_event)
+                results.append(synced)
+                if not synced:
+                    bad_emails.append(account.email)
 
-            return result
-    except Exception as e:
-        print(f"Full error for dev: {traceback.format_exc()}") 
-        return f"ОШИБКА: {type(e).__name__} - {str(e)}"
-    
-    
+            if all(results) and len(results) > 0:
+                new_event.sync_status = "synced"
+            await db.commit
+            
+            if bad_emails:
+                report = f"Не удалось отправить на: {bad_emails}"
+            else:
+                report = "Событие успешно внесено"
+
+            return report
+        except Exception as e:
+            logger.exception(f"AI Tools | {e}") 
+            return f"ОШИБКА: Неизвестная"
 
 
-
-
-def check_schedule(date: str, config: RunnableConfig):
+@tool
+async def check_calendar_events(
+    start_date: str,
+    end_date: str,
+    config: RunnableConfig
+):
     """
-    Проверяет расписание пользователя на конкретную дату.
-    date должен быть в формате ГГГГ-ММ-ДД. Если не указан — проверяет на сегодня.
+    Получает список всех запланированных событий из подключенных календарей пользователя за указанный период.
+    Используй эту функцию перед планированием новых задач, чтобы избежать конфликтов, 
+    или для анализа текущей загруженности пользователя.
+
+    Аргументы:
+    - start_date: Начало периода поиска в формате ISO 8601 (ГГГГ-ММ-ДД). 
+                  Включает события, начинающиеся с 00:00:00 UTC этого дня.
+    - end_date: Конец периода поиска в формате ISO 8601 (ГГГГ-ММ-ДД). 
+                Включает события до 23:59:59 UTC этого дня.
+
+    Возвращает:
+    Список словарей с деталями событий:
+    [
+        {
+            "title": "Название",
+            "start": "ISO_TIMESTAMP",
+            "end": "ISO_TIMESTAMP",
+            "description": "Описание"
+        }, ...
+    ]
+
+    Инструкция для Агента:
+    1. Всегда проверяй этот список перед тем, как предложить пользователю время для новой задачи.
+    2. Если список пуст, значит день свободен.
     """
     user_id = config.get("configurable", {}).get("user_id")
     if not user_id:
-        return "Ошибка: не удалось определить пользователя."
-    try:
-        accounts = get_calendars_by_id(user_id)
-        if not accounts:
-            return "Отсутствуют созданные календари"
-        
-        all_events = []
-
-        client = get_client()
-        events = get_day_events(client, date)
-        
-        for account in accounts:
+        return "ОШИБКА: Не удалось определить пользователя."
+    
+    async with AsyncSessionLocal() as db:
+        try:
+            accounts = await get_calendars_by_id(db, user_id=user_id)
+            if not accounts:
+                return "ОШИБКА: У пользователя не подключены календари."
+            
+            report = []
+            calendar = YandexCalendarAPI(accounts[0].email, accounts[0].app_password)
+            events = await calendar.get_events(start_date, end_date)
             for event in events:
-                time_str = event['start'].strftime('%H:%M') if hasattr(event['start'], 'strftime') else "Весь день"
-                all_events.append(f"[{account.provider}] {time_str} - {event['title']}")
+                report.append(parse_caldav_event(event))
+            
+            return report
+        except Exception as e:
+            logger.exception(f"AI Tools | {e}") 
+            return f"ОШИБКА: Неизвестная"
 
-        if not all_events:
-            return "На сегодня в календарях пусто."
-        return "Полное расписание на сегодня:\n" + "\n".join(all_events)
-    except Exception as e:
-        return f"Ошибка при проверке расписания: {str(e)}"
+async def parse_caldav_event(event_obj):
+    ical = event_obj.icalendar_instance
+    v_event = None
+    
+    for component in ical.walk():
+        if component.name == "VEVENT":
+            v_event = component
+            break
+            
+    if not v_event:
+        return None
+
+    return {
+        "title": str(v_event.get('summary', 'Без названия')),
+        "start": v_event.get('dtstart').dt.isoformat() if v_event.get('dtstart') else None,
+        "end": v_event.get('dtend').dt.isoformat() if v_event.get('dtend') else None,
+        "description": str(v_event.get('description', ''))
+    }
+            
 
 
 def get_user_recommendations(user_id: int, categories: list = None):
     """Используй для поиска интересных событий на основе рейтинга авторов."""
     return "Список рекомендованных событий: ..."
-
-@tool
-def check_user_calendars(config: RunnableConfig):
-    """Проверяет, какие календари (Яндекс/Google) подключены у пользователя."""
-    user_id = config.get("configurable", {}).get("user_id")
-    if not user_id:
-        return "Ошибка: не удалось определить пользователя."
-    
-    try:
-        with SessionLocal() as db:
-            accounts = get_calendars_by_id(db, user_id)
-            if not accounts:
-                return "У пользователя нет подключенных календарей."
-            return [f"{acc.email}" for acc in accounts]
-    except Exception as e:
-        return f"ОШИБКА: {type(e).__name__} - {str(e)}"

@@ -4,12 +4,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
-from database.service import (
-    create_calendar, delete_calendar_by_email
-)
-from database.database import (
+from database import (
     CalendarAccount,
-    get_db
+    get_db,
+    create_calendar, delete_calendar_by_email
 )
 
 router = APIRouter(

@@ -1,9 +1,6 @@
 import os
 from cryptography.fernet import Fernet
 from werkzeug.security import generate_password_hash, check_password_hash
-from dotenv import load_dotenv
-
-load_dotenv()
 
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
 if not ENCRYPTION_KEY:

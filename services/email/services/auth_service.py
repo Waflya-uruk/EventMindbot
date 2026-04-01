@@ -5,7 +5,7 @@ from models import User
 from services.email.validators import Validators
 from services.email_service import EmailService
 from services.verification_service import VerificationService
-from database.db_operations import save_user, get_user_by_email, update_user_verification
+from database import save_user, get_user_by_email, update_user_verification
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

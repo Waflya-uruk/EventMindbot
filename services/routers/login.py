@@ -3,8 +3,7 @@ from niquests import Session
 from pydantic import BaseModel
 
 from core.security import verify_password
-from database.database import get_db
-from database.service import get_user_by_email
+from database import get_db, get_user_by_email
 
 router = APIRouter(
     prefix="/login",

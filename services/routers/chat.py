@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import  Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -18,8 +18,8 @@ class ChatRequest(BaseModel):
 @router.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     try:
-        current_date = datetime.now().strftime("%Y-%m-%d %H:%M")
-        message = f"Контекст: Сегодня {current_date}.  Вопрос пользователя: {request.message}"
+        current_date = datetime.now(timezone.utc).isoformat()
+        message = f"Контекст: Сегодня {current_date}.  Сообщение пользователя: {request.message}"
 
         input = {"messages": [{"role": "user", "content": message}]}
 
