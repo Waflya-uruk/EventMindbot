@@ -19,7 +19,10 @@ def decrypt_data(encrypted_text: str) -> str:
     """Расшифровывает строку для использования в API."""
     if not encrypted_text:
         return ""
-    return cipher.decrypt(encrypted_text.encode()).decode()
+    try:
+        return cipher.decrypt(encrypted_text.encode()).decode()
+    except:
+        return encrypted_text 
 
 
 

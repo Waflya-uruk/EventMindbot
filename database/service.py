@@ -1,7 +1,8 @@
+from datetime import datetime, timezone
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from .models import User, UserEvent, CalendarAccount, Author, AuthorEvent
 
 
@@ -47,14 +48,10 @@ async def get_calendars_by_id(db: AsyncSession, user_id: int):
     return calendars
 
 async def delete_calendar_by_email(db: AsyncSession, email: str) -> bool:
-    query = select(CalendarAccount).filter(CalendarAccount.email == email)
+    query = delete(CalendarAccount).where(CalendarAccount.email == email)
     result = await db.execute(query)
-    account = result.scalars().first()
-    if account:
-        db.delete(account)
-        await db.commit()
-        return True
-    return False
+    await db.commit()
+    return result.rowcount > 0
 
 
 # USER EVENT
@@ -75,6 +72,20 @@ async def get_user_events(db: AsyncSession, user_id: int, limit: int = 10):
     result = await db.execute(query)
     events = result.scalars().all()
     return events
+
+async def get_daily_sync_packet(db: AsyncSession, user_id: int,):
+    today = datetime.now(timezone.utc).date()
+    query = select(UserEvent).where(
+        UserEvent.user_id == user_id,
+        func.date(UserEvent.start_time) == today
+    )
+    result = await db.execute(query)
+    events = result.scalars().all()
+    
+    return [
+        {"id": e.id, "time": e.start_time.isoformat(), "title": e.title} 
+        for e in events
+    ]
 
 
 # AUTHOR

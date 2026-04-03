@@ -31,9 +31,11 @@ class ActivityUpdate(BaseModel):
 
 
 
-router = APIRouter()
+router = APIRouter(
+    prefix="/activity",
+    tags=["Logs"])
 
-@router.post("/activity/start", response_model=ActivityResponse)
+@router.post("/start", response_model=ActivityResponse)
 async def start_activity(activity: ActivityCreate, db: AsyncSession = Depends(get_db)):
     now = datetime.now()
     delay = int((now - activity.planned_start).total_seconds())

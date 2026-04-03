@@ -3,7 +3,7 @@ from caldav import aio
 from datetime import datetime
 from sqlalchemy import select
 
-from main import logger
+from core.logs import logger
 from database import CalendarAccount, UserEvent
 from sqlalchemy.ext.asyncio import AsyncSession
 

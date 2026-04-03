@@ -1,5 +1,4 @@
-import logging
-import sys
+from core.logs import logger
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -7,17 +6,9 @@ load_dotenv()
 from database import init_db
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from services.routers import calendars_router, chat_router, login_router, registration_router
+from services.routers import *
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
-)
 
-logger = logging.getLogger("eventmind")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -45,6 +36,8 @@ app.include_router(calendars_router)
 app.include_router(chat_router)
 app.include_router(login_router)
 app.include_router(registration_router)
+app.include_router(events_router)
+app.include_router(activity_router)
 
 @app.get("/health")
 def health_check():

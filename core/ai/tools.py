@@ -1,9 +1,11 @@
+from datetime import datetime
+
 from langchain.tools import tool
 from langchain_core.runnables import RunnableConfig
 
 from database import create_event, get_calendars_by_id, AsyncSessionLocal
 from services.api.calendar_api import YandexCalendarAPI
-from main import logger
+from core.logs import logger
 
 @tool
 async def create_calendar_event(
@@ -34,9 +36,11 @@ async def create_calendar_event(
         try:
             accounts = await get_calendars_by_id(db, user_id=user_id)
             if not accounts:
-                return "ОШИБКА: У пользователя не подключены календари."
+                return "ОСТАНОВИСЬ. Календари отсутствуют. Сообщи об этом пользователю."
+            dt_start = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+            dt_end = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
             
-            new_event = await create_event(db, user_id, title, description, start_time, end_time)
+            new_event = await create_event(db, user_id, title, description, dt_start, dt_end)
             
             results = []
             bad_emails = []
@@ -49,17 +53,17 @@ async def create_calendar_event(
 
             if all(results) and len(results) > 0:
                 new_event.sync_status = "synced"
-            await db.commit
+            await db.commit()
             
             if bad_emails:
-                report = f"Не удалось отправить на: {bad_emails}"
+                report = f"ОСТАНОВИСЬ. Не удалось отправить мероприятие на: {bad_emails}. Сообщи это пользователю."
             else:
-                report = "Событие успешно внесено"
+                report = "ОСТАНОВИСЬ. Мероприятие успешно внесено. Сообщи это пользователю."
 
             return report
         except Exception as e:
             logger.exception(f"AI Tools | {e}") 
-            return f"ОШИБКА: Неизвестная"
+            return f"ОСТАНОВИСЬ. Неизвестная ошибка. Сообщи об этом пользователю."
 
 
 @tool

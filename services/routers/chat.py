@@ -15,7 +15,7 @@ class ChatRequest(BaseModel):
     timestamp: Optional[str] = None
     user_id: int
 
-@router.post("/chat")
+@router.post("/")
 async def chat_endpoint(request: ChatRequest):
     try:
         current_date = datetime.now(timezone.utc).isoformat()
