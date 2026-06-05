@@ -1,44 +1,48 @@
-from core.logs import logger
-
 from dotenv import load_dotenv
 load_dotenv()
 
-from database import init_db
-from fastapi import FastAPI
-from contextlib import asynccontextmanager
-from services.routers import *
+from core.agent import agent
 
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # --- КОД ПРИ ЗАПУСКЕ (Startup) ---
+def run_proactive_search():
+    user_interests = ["Здоровье", "Наука", "Разработка игр", "Фитнес"]
+    interests_str = ", ".join(user_interests)
+    
+    #task_input = f"https://pmlconf.yandex.ru/2026/ автоматически добавь мероприятие в нашу систему Odoo пометив в описании что они найдены ии агентом."
+    task_input = f"Интересы пользователя: {interests_str}. Найди в интернете новые релевантные ИТ-мероприятия, конференции или лекции на ближайшие месяцы 2026 года и автоматически добавь их в нашу систему Odoo пометив в описании что они найдены ии агентом."
+    
     try:
-        await init_db()
-        print("🚀 EventMind API: База данных инициализирована")
+        response = agent.invoke(
+            {"messages": [{"role": "user", "content": task_input}]}
+        )
+        messages = response.get("messages", [])
+
+        if messages:
+            print("=== ХРОНОЛОГИЯ РАБОТЫ АГЕНТА ===")
+            for msg in messages:
+                if (
+                    hasattr(msg, "tool_calls")
+                    and msg.tool_calls
+                ):
+                    print(
+                        f"\n🤖 Робот вызывает инструмент: {msg.tool_calls[0]['name']}"
+                    )
+                    print(
+                        f"   Аргументы: {msg.tool_calls[0]['args']}"
+                    )
+
+                elif (
+                    msg.type == "tool"
+                ):
+                    print(
+                        f"🛠️ Ответ инструмента (ID: {msg.tool_call_id}):"
+                    )
+                    print(f"   {msg.content}")
+
+            print("\n=== ИТОГОВЫЙ ОТЧЕТ ОБ АВТОНОМНОЙ РАБОТЕ ===")
+            print(messages[-1].content)
+
     except Exception as e:
-        print(f"❌ Ошибка при старте БД: {e}")
+        print(f"Ошибка при автономном поиске: {e}")
 
-    print("Приложение EventMind запущено, база готова")
-    
-    yield
-    
-    # --- КОД ПРИ ВЫКЛЮЧЕНИИ (Shutdown) ---
-    print("👋 Приложение завершает работу")
-
-app = FastAPI(
-    title="EventMind API",
-    version="0.1.0",
-    lifespan=lifespan
-)
-
-app.include_router(calendars_router)
-app.include_router(chat_router)
-app.include_router(login_router)
-app.include_router(registration_router)
-app.include_router(events_router)
-app.include_router(activity_router)
-
-@app.get("/health")
-def health_check():
-    return {"status": "ok", "message": "EventMind is alive"}
+if __name__ == "__main__":
+    run_proactive_search()

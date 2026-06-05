@@ -3,7 +3,7 @@ from typing import  Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from core.ai import *
+from core.agent import *
 
 router = APIRouter(
     prefix="/chat",

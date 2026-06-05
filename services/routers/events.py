@@ -11,7 +11,7 @@ from database import (
     get_db
 )
 
-from core.ai import *
+from core.agent import *
 
 router = APIRouter(
     prefix="/events",
