@@ -4,7 +4,7 @@ load_dotenv()
 from core.agent import agent
 
 def run_proactive_search():
-    user_interests = ["Машинное обучение и искусственный интеллект", "Разработка игр", "Фитнес"]
+    user_interests = ["Здоровье", "Наука", "Разработка игр", "Фитнес"]
     interests_str = ", ".join(user_interests)
     
     #task_input = f"https://pmlconf.yandex.ru/2026/ автоматически добавь мероприятие в нашу систему Odoo пометив в описании что они найдены ии агентом."
