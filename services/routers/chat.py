@@ -1,9 +1,9 @@
 from datetime import datetime, timezone
-from typing import  Optional
+from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from core.agent import *
+from core.agent import agent
 
 router = APIRouter(
     prefix="/chat",
@@ -19,13 +19,19 @@ class ChatRequest(BaseModel):
 async def chat_endpoint(request: ChatRequest):
     try:
         current_date = datetime.now(timezone.utc).isoformat()
-        message = f"Контекст: Сегодня {current_date}.  Сообщение пользователя: {request.message}"
+        full_message = f"Контекст: Сегодня {current_date}. Сообщение пользователя: {request.message}"
 
-        input = {"messages": [{"role": "user", "content": message}]}
+        agent_input = {"messages": [{"role": "user", "content": full_message}]}
 
-        config = {"configurable": {"user_id": request.user_id}, "recursion_limit": 4}
+        config = {
+            "configurable": {
+                "thread_id": str(request.user_id),
+                "user_id": request.user_id
+            }, 
+            "recursion_limit": 25  
+        }
 
-        response = await agent.ainvoke(input=input, config=config)
+        response = await agent.ainvoke(input=agent_input, config=config)
 
         messages = response["messages"]
         response_text = messages[-1].content
@@ -33,6 +39,7 @@ async def chat_endpoint(request: ChatRequest):
         return {
             "reply": response_text
         }
+        
     except Exception as e:
         print(f"Ошибка Агента: {e}")
-        raise HTTPException(status_code=500, detail="Агент временно недоступен")
+        raise HTTPException(status_code=500, detail=f"Агент временно недоступен: {str(e)}")

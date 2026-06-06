@@ -1,64 +1,60 @@
 services:
-  # 1. База данных PostgreSQL
   db:
     image: postgres:16
     container_name: team3-db
     restart: always
-    ports:
-      - "5432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-odoo}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-odoo}
-      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-odoo_db}
     volumes:
       - team3_db_data:/var/lib/postgresql/data
     networks:
       - eventmind3-network
 
-  # 2. ERP система Odoo
   odoo:
     image: odoo:18
     container_name: team3-odoo
+    restart: always
     depends_on:
       - db
-    ports:
-      - "8069:8069"
+    command: -d odoo_db
     environment:
       HOST: db
       USER: ${POSTGRES_USER:-odoo}
       PASSWORD: ${POSTGRES_PASSWORD:-odoo}
+      PROXY_MODE: 1
     volumes:
       - team3_odoo_data:/var/lib/odoo
     networks:
       - eventmind3-network
 
-  # 3. (FastAPI)
-  api:
-    image: koyq/event-mind:latest
-    container_name: eventmind3-api
-    depends_on:
-      - db
+  nginx:
+    image: nginx:latest
+    container_name: team3-nginx
+    restart: always
     ports:
-      - "8000:8000"
-    env_file:
-      - .env
-    environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-odoo}:${POSTGRES_PASSWORD:-odoo}@db:5432/${POSTGRES_DB:-postgres}
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/odoo.conf
+      - /etc/letsencrypt:/etc/nginx/ssl:ro
+    depends_on:
+      - odoo  
     networks:
       - eventmind3-network
-
-  # 4. AI-Агент
-  ai_agent:
-    image: koyq/event-mind:latest
-    container_name: eventmind3-ai
-    depends_on:
-      - api
-      - db
-    env_file:
-      - .env
+  
+  agent:
+    build: ./agent
+    container_name: team3-agent
+    restart: always
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-odoo}:${POSTGRES_PASSWORD:-odoo}@db:5432/${POSTGRES_DB:-postgres}
-      - GIGACHAT_CREDENTIALS=${GIGACHAT_CREDENTIALS}
+      - ODOO_HOST=http://team3-odoo:8069
+      - ${DB_NAME:-odoo_db}
+      - ${ODOO_USER:-odoo@ya.ru}
+      - ${ODOO_PASS:-odoo}
+    depends_on:
+      - odoo
     networks:
       - eventmind3-network
 
